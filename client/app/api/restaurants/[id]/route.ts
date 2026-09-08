@@ -33,8 +33,30 @@ export async function GET(_req: Request, { params }: Params) {
  * TODO (A2): implement. Update the row matching :id and return the updated
  * record (or 404 if it doesn't exist). Validate the body the same way POST does.
  */
-export async function PUT(_req: Request, _ctx: Params) {
-  return NextResponse.json({ error: 'Not implemented' }, { status: 501 });
+export async function PUT(req: Request, { params }: Params) {
+  try {
+    const body = await req.json();
+    const { name, cuisine, address, rating } = body;
+
+    const { rows } = await pool.query(
+      `UPDATE restaurants
+       SET name = $1,
+           cuisine = $2,
+           address = $3,
+           rating = $4
+       WHERE id = $5
+       RETURNING id, name, cuisine, address, rating, created_at AS "createdAt"`,
+      [name, cuisine, address, rating, params.id]
+    );
+
+    if (rows.length === 0) {
+      return NextResponse.json({ error: 'Restaurant not found' }, { status: 404 });
+    }
+
+    return NextResponse.json(toRestaurant(rows[0]));
+  } catch (err) {
+    return handleError(err);
+  }
 }
 
 /**
