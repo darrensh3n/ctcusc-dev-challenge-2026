@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { pool } from '@/db/pool';
 import { handleError, NotFoundError } from '@/lib/errors';
 import { toVisit } from '@/lib/types';
-import { parseId, validateVisitBody } from '@/lib/validation';
+import { parseId, validateVisitUpdateBody } from '@/lib/validation';
 
 type Params = { params: { id: string; visitId: string } };
 
@@ -10,14 +10,29 @@ const VISIT_COLUMNS = `id, "restaurantId", date, "amountSpent", notes, created_a
 
 /**
  * PUT /api/restaurants/:id/visits/:visitId
- * Update a visit's date, amount spent, or review notes.
+ * Update a visit's date, amount spent, or review notes. A partial update -
+ * omitting `amountSpent`/`notes` from the body leaves the existing value
+ * alone rather than clearing it; send an explicit `null` to clear one.
  */
 export async function PUT(req: Request, { params }: Params) {
   try {
     const restaurantId = parseId(params.id);
     const visitId = parseId(params.visitId);
     const body = await req.json();
-    const { date, amountSpent, notes } = validateVisitBody(body);
+    const update = validateVisitUpdateBody(body);
+
+    const { rows: existingRows } = await pool.query(
+      `SELECT ${VISIT_COLUMNS} FROM visits WHERE id = $1 AND "restaurantId" = $2`,
+      [visitId, restaurantId]
+    );
+
+    if (existingRows.length === 0) {
+      throw new NotFoundError('Visit not found');
+    }
+
+    const existing = toVisit(existingRows[0]);
+    const amountSpent = 'amountSpent' in update ? update.amountSpent! : existing.amountSpent;
+    const notes = 'notes' in update ? update.notes! : existing.notes;
 
     const { rows } = await pool.query(
       `UPDATE visits
@@ -26,12 +41,8 @@ export async function PUT(req: Request, { params }: Params) {
            notes = $3
        WHERE id = $4 AND "restaurantId" = $5
        RETURNING ${VISIT_COLUMNS}`,
-      [date, amountSpent, notes, visitId, restaurantId]
+      [update.date, amountSpent, notes, visitId, restaurantId]
     );
-
-    if (rows.length === 0) {
-      throw new NotFoundError('Visit not found');
-    }
 
     return NextResponse.json(toVisit(rows[0]));
   } catch (err) {

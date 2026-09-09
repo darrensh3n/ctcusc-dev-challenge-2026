@@ -116,3 +116,62 @@ export function validateVisitBody(body: unknown): VisitInput {
     notes: (notes as string | null | undefined) ?? null,
   };
 }
+
+export interface VisitUpdateInput {
+  date: string;
+  amountSpent?: number | null;
+  notes?: string | null;
+}
+
+/**
+ * Validate a PUT request body as a *partial* update: `date` is always
+ * required, but `amountSpent`/`notes` are only touched when the key is
+ * actually present in the body - an omitted key leaves the existing value
+ * alone, while an explicit `null` clears it. (Plain `in` checks, since
+ * `JSON.parse` never produces `undefined` for a key that's present.)
+ */
+export function validateVisitUpdateBody(body: unknown): VisitUpdateInput {
+  if (typeof body !== 'object' || body === null) {
+    throw new ValidationError('Request body must be a JSON object');
+  }
+
+  const record = body as Record<string, unknown>;
+  const { date } = record;
+
+  if (typeof date !== 'string' || !DATE_RE.test(date) || Number.isNaN(Date.parse(date))) {
+    throw new ValidationError('date is required and must be a valid YYYY-MM-DD date');
+  }
+
+  const today = new Date().toISOString().slice(0, 10);
+  if (date > today) {
+    throw new ValidationError('date cannot be in the future');
+  }
+
+  const result: VisitUpdateInput = { date };
+
+  if ('amountSpent' in record) {
+    const amountSpent = record.amountSpent;
+    if (
+      amountSpent !== null &&
+      (typeof amountSpent !== 'number' || Number.isNaN(amountSpent) || amountSpent < 0)
+    ) {
+      throw new ValidationError('amountSpent must be a non-negative number');
+    }
+    result.amountSpent = amountSpent as number | null;
+  }
+
+  if ('notes' in record) {
+    const notes = record.notes;
+    if (notes !== null) {
+      if (typeof notes !== 'string' || notes.trim() === '') {
+        throw new ValidationError('notes must be a non-empty string when provided');
+      }
+      if (notes.length > 2000) {
+        throw new ValidationError('notes must be 2000 characters or fewer');
+      }
+    }
+    result.notes = notes as string | null;
+  }
+
+  return result;
+}

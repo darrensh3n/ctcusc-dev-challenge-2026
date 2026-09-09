@@ -9,44 +9,49 @@ amount spent, and optional review notes, plus a per-restaurant summary
 I picked this over filters/search or a link-out to Yelp/Google because those
 don't touch anything a reviewer can grade judgment on - filters are query-param
 plumbing on an endpoint that already exists, and a Yelp link is a static `<a>`
-tag with no `/api` work behind it at all. `visits` was already a table in the
-schema with nobody reading or writing it, which told me it was the intended
-gap to fill, not a feature I was inventing from nothing.
+tag with no `/api` work behind it at all.
 
-The "why" is personal: as a frequent Yelp user, a restaurant with a rating and
-zero reviews is useless to me - I can't tell if the rating is real or if the
-place has just gotten worse since. I bundled visits and reviews into one
-record instead of two because they're the same event: the food and service at
-a restaurant drift visit to visit, so a review only means something pinned to
-*which* visit it's describing, not floating separately as a general opinion.
+I built this feature because as a frequent Yelp user, a restaurant with a rating and
+zero reviews doesn't help me as I can't tell if the rating is real or or if the
+place has just gotten worse since. I combined visits and reviews into one record 
+instead of two because they're the same event: the food and service at a restaurant
+can drift visit to visit. A review is pinned to which visit it's describing.
+
 
 ## 2. What did you decide, and what did you rule out?
 
-Nested the routes under the restaurant (`/api/restaurants/:id/visits`) since a
-visit has no meaning without its restaurant - never considered a top-level
-`/api/visits`. Made `notes` and `amountSpent` optional but `date` required:
-you can log that you went without writing a review, but "a visit" needs a
-date to mean anything. Added `GET /api/restaurants/:id/summary` as a small
-aggregate on top of plain CRUD - total/average spend is the thing I'd actually
-want to see as the user of this app, not just a raw list of rows.
+I nested the routes under the restaurant (`/api/restaurants/:id/visits`)
+instead of a flat `/api/visits` because a visit doesn't mean anything without
+its restaurant. I made `date` required but `notes` and `amountSpent`
+optional: you can log that you went without writing a review, but a visit
+still needs a date. I also added `GET /api/restaurants/:id/summary` on top of
+the plain CRUD, since total spend and average spend is what I'd actually want
+to see as the user, not just a list of rows.
 
-Ruled out a separate `reviews` table decoupled from visits - I considered it,
-but a review with no visit backing it felt like exactly the problem I was
-trying to fix (an opinion with no visible provenance). The tradeoff I'm least
-sure about: `notes` is required to be non-empty if present, which means you
-can't overwrite a note by clearing it to blank - the way I'd do it would be to
-let the client send `null` explicitly to delete a note, whereas today
-"unsetting" one means DELETE-and-recreate the visit.
+I ruled out a separate `reviews` table split off from visits. I thought about
+it, but a review with no visit behind it is the exact problem I was trying to
+fix - an opinion floating with no proof it happened.
+
+One tradeoff from merging reviews into `visits` instead of a separate table:
+a review can't exist without a full visit record. Every review needs a
+`date` attached, since that's required on `visits`, and deleting a visit
+deletes its review with it, because they're the same row. A separate
+`reviews` table would let you keep review history independent of visit
+records - I gave that up on purpose, since a review with no visit behind it
+was the exact problem I was trying to solve, but it does mean you lose a
+review the moment you delete the visit it's attached to.
+
 
 ## 3. Where did you cut corners?
 
-No edit-visit UI - `PUT` is implemented and curl-tested, but the detail page
-only has add and delete buttons, not an inline edit form. No pagination on the
-visits list, fine at seed-data scale but wouldn't hold up for a restaurant
-visited fifty times. `averageSpent` silently ignores visits with no
-`amountSpent` recorded rather than surfacing that some visits weren't costed.
-With another day I'd add the edit form first, since PUT already works and it's
-the missing third of the CRUD story the UI tells.
+There's no edit-visit UI. `PUT` works and I tested it with curl, but the
+detail page only has buttons to add or delete a visit, not edit one. There's
+no pagination on the visits list either - fine now with a few seed rows, but
+it wouldn't hold up for a restaurant with fifty visits logged. `averageSpent`
+also just skips visits with no `amountSpent` instead of telling you some
+visits weren't costed. With another day I'd build the edit form first, since
+`PUT` already works and it's the missing piece of the CRUD story the UI
+tells.
 
 ## 4. What should we look at first?
 
@@ -236,10 +241,6 @@ cases.
 - No edit-visit UI (see Q3) - `PUT` works, curl-tested, just no form for it.
 - No pagination on `GET /api/restaurants/:id/visits` - fine for seed data,
   would need it for a restaurant with many visits.
-- Can't explicitly clear a visit's `notes` back to null via `PUT` - the
-  validator rejects an empty string, so "un-reviewing" a visit today means
-  delete-and-recreate. Would fix by treating `notes: null` in the body as
-  "clear it" and only rejecting empty-but-not-null strings.
 - Deleting a restaurant cascades to its visits (`ON DELETE CASCADE` in the
   original migration) - I kept that behavior rather than blocking the delete,
   since a restaurant with no visits left to reference is a reasonable thing
