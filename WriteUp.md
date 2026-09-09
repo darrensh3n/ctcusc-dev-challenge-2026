@@ -70,10 +70,12 @@ breaks at scale rather than just being incomplete.
 ## 4. What should we look at first?
 
 `client/app/api/restaurants/[id]/visits/route.ts` and
-`.../visits/[visitId]/route.ts` for the API, then
+`.../visits/[visitId]/route.ts` for the API, `client/lib/validation.ts` for
+the checks behind them (`validateVisitBody`, `validateVisitUpdateBody`), then
 `client/app/restaurants/[id]/page.tsx` and `VisitsPanel.tsx` for the UI. The
 summary endpoint (`.../summary/route.ts`) is the smallest file but the one I'd
-point to first - it's the part that isn't just CRUD.
+point to first. To see it running: click into any restaurant from the home
+page - the visits, ratings, and reviews all live on that detail page.
 
 ---
 
