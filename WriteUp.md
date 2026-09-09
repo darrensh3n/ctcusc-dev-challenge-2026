@@ -64,14 +64,50 @@
 cases:
 
 ```bash
-# e.g.
-curl -i http://localhost:3000/api/restaurants          # 200 + array
-curl -i http://localhost:3000/api/restaurants/99999    # 404
-curl -i http://localhost:3000/api/restaurants/abc      # 404
+# reads
+curl -i http://localhost:3000/api/restaurants           # 200 + array
+curl -i http://localhost:3000/api/restaurants/1         # 200 + restaurant
+curl -i http://localhost:3000/api/restaurants/99999     # 404, no such id
+curl -i http://localhost:3000/api/restaurants/abc       # 404, not an integer
+curl -i http://localhost:3000/api/restaurants/-1        # 404, not positive
+curl -i http://localhost:3000/api/restaurants/1.5       # 404, not an integer
+
+# create
 curl -i -X POST http://localhost:3000/api/restaurants \
   -H 'Content-Type: application/json' \
-  -d '{"name":"Out Of Range","rating":6}'              # 400
+  -d '{"name":"Valid Spot","cuisine":"Test","address":"2 Test St","rating":4.5}'
+  # 201 + created restaurant (with id)
+curl -i -X POST http://localhost:3000/api/restaurants \
+  -H 'Content-Type: application/json' -d '{"rating":4}'
+  # 400, name is required
+curl -i -X POST http://localhost:3000/api/restaurants \
+  -H 'Content-Type: application/json' -d '{"name":"Out Of Range","rating":6}'
+  # 400, rating outside 0-5
+curl -i -X POST http://localhost:3000/api/restaurants \
+  -H 'Content-Type: application/json' -d '{not json'
+  # 400, malformed body 
+
+# update (against the id created above)
+curl -i -X PUT http://localhost:3000/api/restaurants/<id> \
+  -H 'Content-Type: application/json' -d '{"name":"Updated Spot","rating":3}'
+  # 200 + updated restaurant
+curl -i -X PUT http://localhost:3000/api/restaurants/99999 \
+  -H 'Content-Type: application/json' -d '{"name":"x","rating":3}'
+  # 404, no such id
+curl -i -X PUT http://localhost:3000/api/restaurants/<id> \
+  -H 'Content-Type: application/json' -d '{"rating":9}'
+  # 400, invalid body
+
+# delete
+curl -i -X DELETE http://localhost:3000/api/restaurants/<id>   # 204, no body
+curl -i -X DELETE http://localhost:3000/api/restaurants/99999  # 404, no such id
 ```
+
+Ran all of the above locally after `POST`ing a scratch restaurant, capturing
+its `id` for the `PUT`/`DELETE` cases, then deleting it at the end so seed
+data was left intact. Every case returned the status the contract table
+requires - no `500`s anywhere, including the malformed-body and bad-id cases
+that weren't handled before A3.
 
 **Part B** - the equivalent cases for what you built:
 
