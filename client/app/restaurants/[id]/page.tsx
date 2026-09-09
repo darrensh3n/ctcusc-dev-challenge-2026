@@ -35,6 +35,12 @@ export default async function RestaurantPage({ params }: { params: { id: string 
             {summary.averageSpent === null ? '—' : `$${summary.averageSpent.toFixed(2)}`}
           </div>
         </div>
+        <div>
+          <div className="text-gray-500">Average visit rating</div>
+          <div className="font-medium">
+            {summary.averageRating === null ? '—' : `${summary.averageRating}★`}
+          </div>
+        </div>
       </div>
 
       <VisitsPanel restaurantId={restaurant.id} initialVisits={visits} />

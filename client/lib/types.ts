@@ -42,6 +42,8 @@ export interface Visit {
   /** Calendar date, "YYYY-MM-DD". No time, no timezone. */
   date: string;
   amountSpent: number | null;
+  /** 0-5, this visit's own rating - separate from the restaurant's overall rating. */
+  rating: number | null;
   notes: string | null;
   /** ISO 8601 timestamp. */
   createdAt: string;
@@ -91,6 +93,7 @@ export function toVisit(row: Record<string, unknown>): Visit {
     restaurantId: Number(row.restaurantId),
     date: dateOnly(row.date),
     amountSpent: num(row.amountSpent),
+    rating: num(row.rating),
     notes: (row.notes as string | null) ?? null,
     createdAt: isoTimestamp(row.createdAt),
   };

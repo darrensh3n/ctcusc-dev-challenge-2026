@@ -67,22 +67,35 @@ export function validateRestaurantBody(body: unknown): RestaurantInput {
 export interface VisitInput {
   date: string;
   amountSpent: number | null;
+  rating: number | null;
   notes: string | null;
 }
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+/** 0-5, same range as restaurants.rating. Shared by create and update paths. */
+function checkRating(rating: unknown): void {
+  if (
+    rating !== undefined &&
+    rating !== null &&
+    (typeof rating !== 'number' || Number.isNaN(rating) || rating < 0 || rating > 5)
+  ) {
+    throw new ValidationError('rating must be a number between 0 and 5');
+  }
+}
+
 /**
  * Validate a POST/PUT request body against the `visits` schema. `date` is
- * required (NOT NULL in the DB); `amountSpent` and `notes` are nullable
- * columns, so they're optional but must be the right shape when present.
+ * required (NOT NULL in the DB); `amountSpent`, `rating`, and `notes` are
+ * nullable columns, so they're optional but must be the right shape when
+ * present.
  */
 export function validateVisitBody(body: unknown): VisitInput {
   if (typeof body !== 'object' || body === null) {
     throw new ValidationError('Request body must be a JSON object');
   }
 
-  const { date, amountSpent, notes } = body as Record<string, unknown>;
+  const { date, amountSpent, rating, notes } = body as Record<string, unknown>;
 
   if (typeof date !== 'string' || !DATE_RE.test(date) || Number.isNaN(Date.parse(date))) {
     throw new ValidationError('date is required and must be a valid YYYY-MM-DD date');
@@ -101,6 +114,8 @@ export function validateVisitBody(body: unknown): VisitInput {
     throw new ValidationError('amountSpent must be a non-negative number');
   }
 
+  checkRating(rating);
+
   if (notes !== undefined && notes !== null) {
     if (typeof notes !== 'string' || notes.trim() === '') {
       throw new ValidationError('notes must be a non-empty string when provided');
@@ -113,6 +128,7 @@ export function validateVisitBody(body: unknown): VisitInput {
   return {
     date,
     amountSpent: (amountSpent as number | null | undefined) ?? null,
+    rating: (rating as number | null | undefined) ?? null,
     notes: (notes as string | null | undefined) ?? null,
   };
 }
@@ -120,6 +136,7 @@ export function validateVisitBody(body: unknown): VisitInput {
 export interface VisitUpdateInput {
   date: string;
   amountSpent?: number | null;
+  rating?: number | null;
   notes?: string | null;
 }
 
@@ -158,6 +175,11 @@ export function validateVisitUpdateBody(body: unknown): VisitUpdateInput {
       throw new ValidationError('amountSpent must be a non-negative number');
     }
     result.amountSpent = amountSpent as number | null;
+  }
+
+  if ('rating' in record) {
+    checkRating(record.rating);
+    result.rating = record.rating as number | null;
   }
 
   if ('notes' in record) {

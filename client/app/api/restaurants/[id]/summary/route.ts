@@ -10,13 +10,15 @@ export interface RestaurantSummary {
   visitCount: number;
   totalSpent: number;
   averageSpent: number | null;
+  averageRating: number | null;
 }
 
 /**
  * GET /api/restaurants/:id/summary
- * Aggregate visit stats for a restaurant: how many times you've been, and
- * what it's cost you. `averageSpent` is null when no visit has a recorded
- * amount (visits with a null amountSpent don't count toward it).
+ * Aggregate visit stats for a restaurant: how many times you've been, what
+ * it's cost you, and how those visits have actually rated. `averageSpent`
+ * and `averageRating` are null when no visit has a recorded amount/rating -
+ * visits missing that field don't count toward the average.
  */
 export async function GET(_req: Request, { params }: Params) {
   try {
@@ -34,18 +36,21 @@ export async function GET(_req: Request, { params }: Params) {
       `SELECT
          COUNT(*)::int AS "visitCount",
          COALESCE(SUM("amountSpent"), 0) AS "totalSpent",
-         AVG("amountSpent") AS "averageSpent"
+         AVG("amountSpent") AS "averageSpent",
+         AVG(rating) AS "averageRating"
        FROM visits
        WHERE "restaurantId" = $1`,
       [restaurantId]
     );
 
     const row = rows[0];
+    const round2 = (value: unknown) => (value === null ? null : Math.round(Number(value) * 100) / 100);
     const summary: RestaurantSummary = {
       restaurantId,
       visitCount: row.visitCount,
       totalSpent: Number(row.totalSpent),
-      averageSpent: row.averageSpent === null ? null : Math.round(Number(row.averageSpent) * 100) / 100,
+      averageSpent: round2(row.averageSpent),
+      averageRating: round2(row.averageRating),
     };
 
     return NextResponse.json(summary);

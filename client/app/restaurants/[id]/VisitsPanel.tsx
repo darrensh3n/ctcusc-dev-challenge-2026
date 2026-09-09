@@ -5,9 +5,9 @@ import { useState } from 'react';
 import type { Visit } from '@/lib/types';
 
 /**
- * Client component: lets you log a visit (with optional amount/notes) and
- * delete past ones. Talks only to /api/restaurants/:id/visits over fetch -
- * no Server Actions, no direct DB access from the page.
+ * Client component: lets you log a visit (with optional amount/rating/notes),
+ * edit a past one, and delete one. Talks only to /api/restaurants/:id/visits
+ * over fetch - no Server Actions, no direct DB access from the page.
  */
 export default function VisitsPanel({
   restaurantId,
@@ -18,11 +18,30 @@ export default function VisitsPanel({
 }) {
   const router = useRouter();
   const [visits, setVisits] = useState(initialVisits);
+  const [editingId, setEditingId] = useState<number | null>(null);
   const [date, setDate] = useState('');
   const [amountSpent, setAmountSpent] = useState('');
+  const [rating, setRating] = useState('');
   const [notes, setNotes] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+
+  function resetForm() {
+    setEditingId(null);
+    setDate('');
+    setAmountSpent('');
+    setRating('');
+    setNotes('');
+  }
+
+  function startEdit(visit: Visit) {
+    setEditingId(visit.id);
+    setDate(visit.date);
+    setAmountSpent(visit.amountSpent === null ? '' : String(visit.amountSpent));
+    setRating(visit.rating === null ? '' : String(visit.rating));
+    setNotes(visit.notes ?? '');
+    setError(null);
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -30,12 +49,17 @@ export default function VisitsPanel({
     setSubmitting(true);
 
     try {
-      const res = await fetch(`/api/restaurants/${restaurantId}/visits`, {
-        method: 'POST',
+      const url = editingId
+        ? `/api/restaurants/${restaurantId}/visits/${editingId}`
+        : `/api/restaurants/${restaurantId}/visits`;
+
+      const res = await fetch(url, {
+        method: editingId ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           date,
           amountSpent: amountSpent === '' ? null : Number(amountSpent),
+          rating: rating === '' ? null : Number(rating),
           notes: notes.trim() === '' ? null : notes,
         }),
       });
@@ -47,10 +71,12 @@ export default function VisitsPanel({
         return;
       }
 
-      setVisits((prev) => [body as Visit, ...prev]);
-      setDate('');
-      setAmountSpent('');
-      setNotes('');
+      if (editingId) {
+        setVisits((prev) => prev.map((v) => (v.id === editingId ? (body as Visit) : v)));
+      } else {
+        setVisits((prev) => [body as Visit, ...prev]);
+      }
+      resetForm();
       router.refresh();
     } finally {
       setSubmitting(false);
@@ -64,6 +90,7 @@ export default function VisitsPanel({
 
     if (res.ok || res.status === 404) {
       setVisits((prev) => prev.filter((v) => v.id !== visitId));
+      if (editingId === visitId) resetForm();
       router.refresh();
     }
   }
@@ -91,6 +118,16 @@ export default function VisitsPanel({
             onChange={(e) => setAmountSpent(e.target.value)}
             className="w-32 rounded border border-gray-300 px-2 py-1 text-sm"
           />
+          <input
+            type="number"
+            step="0.5"
+            min="0"
+            max="5"
+            placeholder="Rating (0-5)"
+            value={rating}
+            onChange={(e) => setRating(e.target.value)}
+            className="w-28 rounded border border-gray-300 px-2 py-1 text-sm"
+          />
         </div>
         <textarea
           placeholder="How was it? (optional review notes)"
@@ -100,13 +137,24 @@ export default function VisitsPanel({
           rows={2}
         />
         {error && <p className="text-sm text-red-600">{error}</p>}
-        <button
-          type="submit"
-          disabled={submitting}
-          className="self-start rounded bg-gray-900 px-3 py-1 text-sm text-white disabled:opacity-50"
-        >
-          Log visit
-        </button>
+        <div className="flex gap-2">
+          <button
+            type="submit"
+            disabled={submitting}
+            className="self-start rounded bg-gray-900 px-3 py-1 text-sm text-white disabled:opacity-50"
+          >
+            {editingId ? 'Update visit' : 'Log visit'}
+          </button>
+          {editingId && (
+            <button
+              type="button"
+              onClick={resetForm}
+              className="self-start rounded border border-gray-300 px-3 py-1 text-sm text-gray-700"
+            >
+              Cancel
+            </button>
+          )}
+        </div>
       </form>
 
       {visits.length === 0 ? (
@@ -118,9 +166,18 @@ export default function VisitsPanel({
               <div className="flex items-baseline justify-between">
                 <span className="text-sm font-medium">{visit.date}</span>
                 <div className="flex items-center gap-3">
+                  {visit.rating !== null && (
+                    <span className="text-sm text-gray-500">{visit.rating}★</span>
+                  )}
                   {visit.amountSpent !== null && (
                     <span className="text-sm text-gray-500">${visit.amountSpent.toFixed(2)}</span>
                   )}
+                  <button
+                    onClick={() => startEdit(visit)}
+                    className="text-xs text-gray-600 hover:underline"
+                  >
+                    Edit
+                  </button>
                   <button
                     onClick={() => handleDelete(visit.id)}
                     className="text-xs text-red-600 hover:underline"

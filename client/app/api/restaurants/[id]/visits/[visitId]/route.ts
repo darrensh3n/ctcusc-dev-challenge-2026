@@ -6,13 +6,14 @@ import { parseId, validateVisitUpdateBody } from '@/lib/validation';
 
 type Params = { params: { id: string; visitId: string } };
 
-const VISIT_COLUMNS = `id, "restaurantId", date, "amountSpent", notes, created_at AS "createdAt"`;
+const VISIT_COLUMNS = `id, "restaurantId", date, "amountSpent", rating, notes, created_at AS "createdAt"`;
 
 /**
  * PUT /api/restaurants/:id/visits/:visitId
- * Update a visit's date, amount spent, or review notes. A partial update -
- * omitting `amountSpent`/`notes` from the body leaves the existing value
- * alone rather than clearing it; send an explicit `null` to clear one.
+ * Update a visit's date, amount spent, rating, or review notes. A partial
+ * update - omitting `amountSpent`/`rating`/`notes` from the body leaves the
+ * existing value alone rather than clearing it; send an explicit `null` to
+ * clear one.
  */
 export async function PUT(req: Request, { params }: Params) {
   try {
@@ -32,16 +33,18 @@ export async function PUT(req: Request, { params }: Params) {
 
     const existing = toVisit(existingRows[0]);
     const amountSpent = 'amountSpent' in update ? update.amountSpent! : existing.amountSpent;
+    const rating = 'rating' in update ? update.rating! : existing.rating;
     const notes = 'notes' in update ? update.notes! : existing.notes;
 
     const { rows } = await pool.query(
       `UPDATE visits
        SET date = $1,
            "amountSpent" = $2,
-           notes = $3
-       WHERE id = $4 AND "restaurantId" = $5
+           rating = $3,
+           notes = $4
+       WHERE id = $5 AND "restaurantId" = $6
        RETURNING ${VISIT_COLUMNS}`,
-      [update.date, amountSpent, notes, visitId, restaurantId]
+      [update.date, amountSpent, rating, notes, visitId, restaurantId]
     );
 
     return NextResponse.json(toVisit(rows[0]));

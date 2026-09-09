@@ -6,7 +6,7 @@ import { parseId, validateVisitBody } from '@/lib/validation';
 
 type Params = { params: { id: string } };
 
-const VISIT_COLUMNS = `id, "restaurantId", date, "amountSpent", notes, created_at AS "createdAt"`;
+const VISIT_COLUMNS = `id, "restaurantId", date, "amountSpent", rating, notes, created_at AS "createdAt"`;
 
 async function assertRestaurantExists(id: number) {
   const { rows } = await pool.query('SELECT id FROM restaurants WHERE id = $1', [id]);
@@ -45,13 +45,13 @@ export async function POST(req: Request, { params }: Params) {
     await assertRestaurantExists(restaurantId);
 
     const body = await req.json();
-    const { date, amountSpent, notes } = validateVisitBody(body);
+    const { date, amountSpent, rating, notes } = validateVisitBody(body);
 
     const { rows } = await pool.query(
-      `INSERT INTO visits ("restaurantId", date, "amountSpent", notes)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO visits ("restaurantId", date, "amountSpent", rating, notes)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING ${VISIT_COLUMNS}`,
-      [restaurantId, date, amountSpent, notes]
+      [restaurantId, date, amountSpent, rating, notes]
     );
 
     return NextResponse.json(toVisit(rows[0]), { status: 201 });
