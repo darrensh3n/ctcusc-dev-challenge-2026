@@ -45,6 +45,13 @@ records - I gave that up on purpose, since a review with no visit behind it
 was the exact problem I was trying to solve, but it does mean you lose a
 review the moment you delete the visit it's attached to.
 
+Another tradeoff: a restaurant's overall `rating` (from Part A) never
+updates based on its visit ratings. I could average `rating` from visit
+history automatically, but I decided against it - one bad visit shouldn't
+retroactively drag down a restaurant's whole score. The cost is that the two
+numbers can drift apart, since nothing keeps them in sync; the user has to
+go update `rating` by hand if they want it to reflect recent visits.
+
 
 ## 3. Where did you cut corners?
 
