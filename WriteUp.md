@@ -3,8 +3,9 @@
 ## 1. What did you build for Part B, and why that?
 
 I built the `visits` API and UI: logging a visit to a restaurant with a date,
-amount spent, and optional review notes, plus a per-restaurant summary
-(visit count, total spent, average spent).
+amount spent, a per-visit rating, and optional review notes; editing or
+deleting a past visit; and a per-restaurant summary (visit count, total
+spent, average spent, average rating).
 
 I picked this over filters/search or a link-out to Yelp/Google because those
 don't touch anything a reviewer can grade judgment on - filters are query-param
@@ -15,7 +16,10 @@ I built this feature because as a frequent Yelp user, a restaurant with a rating
 zero reviews doesn't help me as I can't tell if the rating is real or or if the
 place has just gotten worse since. I combined visits and reviews into one record 
 instead of two because they're the same event: the food and service at a restaurant
-can drift visit to visit. A review is pinned to which visit it's describing.
+can drift visit to visit. A review is pinned to which visit it's describing - and
+so is the rating: each visit carries its own 0-5 rating, separate from the
+restaurant's overall `rating` from Part A, since one bad visit shouldn't
+retroactively define the whole restaurant.
 
 
 ## 2. What did you decide, and what did you rule out?
@@ -44,14 +48,17 @@ review the moment you delete the visit it's attached to.
 
 ## 3. Where did you cut corners?
 
-There's no edit-visit UI. `PUT` works and I tested it with curl, but the
-detail page only has buttons to add or delete a visit, not edit one. There's
-no pagination on the visits list either - fine now with a few seed rows, but
-it wouldn't hold up for a restaurant with fifty visits logged. `averageSpent`
-also just skips visits with no `amountSpent` instead of telling you some
-visits weren't costed. With another day I'd build the edit form first, since
-`PUT` already works and it's the missing piece of the CRUD story the UI
-tells.
+`GET /api/restaurants/:id/visits` returns every visit for that restaurant in
+one response - no limit, no pages. Nothing gets lost or hidden, but a
+restaurant with hundreds of visits would return one huge JSON array and
+render one huge list, instead of loading a manageable page at a time.
+`averageSpent` and `averageRating` both just skip visits missing that field
+rather than telling you some visits weren't costed or rated. And a
+restaurant's overall `rating` never updates based on its visit ratings -
+`averageRating` shows up in the summary, but nothing writes it back into
+`restaurants.rating`, so keeping the two consistent is still on the user.
+With another day I'd add pagination first, since it's the one that actually
+breaks at scale rather than just being incomplete.
 
 ## 4. What should we look at first?
 
@@ -65,17 +72,21 @@ point to first - it's the part that isn't just CRUD.
 
 ## Part B: routes
 
-All four live under a restaurant, since a visit has no meaning without one.
-`:id` is the restaurant id, `:visitId` the visit id - both follow the same
-"not a positive integer -> 404" rule as Part A.
+All five live under a restaurant, since a visit has no meaning without one.
 
 | Method and path                                   | What it does                          | Success            | Errors                                                    |
 | -------------------------------------------------- | -------------------------------------- | ------------------- | ---------------------------------------------------------- |
 | `GET /api/restaurants/:id/visits`                 | List a restaurant's visits, newest first | `200` + JSON array | `404` if restaurant missing                                |
-| `POST /api/restaurants/:id/visits`                | Log a visit (review notes optional)    | `201` + created visit | `404` if restaurant missing, `400` on invalid body        |
-| `PUT /api/restaurants/:id/visits/:visitId`        | Update a visit's date/amount/notes     | `200` + updated visit | `404` if visit missing, `400` on invalid body            |
+| `POST /api/restaurants/:id/visits`                | Log a visit (rating, amount, notes all optional) | `201` + created visit | `404` if restaurant missing, `400` on invalid body |
+| `PUT /api/restaurants/:id/visits/:visitId`        | Partially update a visit's date/amount/rating/notes | `200` + updated visit | `404` if visit missing, `400` on invalid body |
 | `DELETE /api/restaurants/:id/visits/:visitId`     | Delete a visit                         | `204`, no body      | `404` if visit missing                                     |
 | `GET /api/restaurants/:id/summary`                | Aggregate visit stats for a restaurant | `200` + summary     | `404` if restaurant missing                                |
+
+`:id` is the restaurant id, `:visitId` the visit id - both follow the same
+"not a positive integer -> 404" rule as Part A. `PUT` is a **partial**
+update: `date` is always required, but omitting `amountSpent`/`rating`/
+`notes` leaves the existing value alone; send an explicit `null` to clear
+one of them.
 
 Visit shape:
 
@@ -85,6 +96,7 @@ Visit shape:
   "restaurantId": 1,
   "date": "2026-09-01",       // YYYY-MM-DD, required, cannot be in the future
   "amountSpent": 24.5,        // number >= 0, or null
+  "rating": 4.5,               // 0-5, or null - this visit's own rating
   "notes": "Great ramen, salty broth", // non-empty string <= 2000 chars, or null
   "createdAt": "2026-09-09T07:31:11.260Z"
 }
@@ -94,30 +106,43 @@ Visit shape:
 
 ```jsonc
 // request
-{ "date": "2026-09-01", "amountSpent": 24.5, "notes": "Great ramen, salty broth" }
+{ "date": "2026-09-01", "amountSpent": 24.5, "rating": 4.5, "notes": "Great ramen, salty broth" }
 
 // 201 response
 { "id": 4, "restaurantId": 1, "date": "2026-09-01", "amountSpent": 24.5,
-  "notes": "Great ramen, salty broth", "createdAt": "2026-09-09T07:31:11.260Z" }
+  "rating": 4.5, "notes": "Great ramen, salty broth", "createdAt": "2026-09-09T07:31:11.260Z" }
+```
+
+**`PUT /api/restaurants/:id/visits/:visitId`** (partial - only `date` required)
+
+```jsonc
+// request - only correcting the rating, amountSpent/notes stay as they were
+{ "date": "2026-09-01", "rating": 3 }
+
+// 200 response
+{ "id": 4, "restaurantId": 1, "date": "2026-09-01", "amountSpent": 24.5,
+  "rating": 3, "notes": "Great ramen, salty broth", "createdAt": "2026-09-09T07:31:11.260Z" }
 ```
 
 **`GET /api/restaurants/:id/summary`**
 
 ```jsonc
 // 200 response
-{ "restaurantId": 1, "visitCount": 3, "totalSpent": 85, "averageSpent": 28.33 }
+{ "restaurantId": 1, "visitCount": 3, "totalSpent": 85, "averageSpent": 28.33, "averageRating": 4.17 }
 ```
 
-`averageSpent` is `null` when no visit for the restaurant has a recorded
-`amountSpent` (visits with a null amount aren't counted toward it).
+`averageSpent`/`averageRating` are `null` when no visit for the restaurant
+has a recorded `amountSpent`/`rating` (visits missing that field aren't
+counted toward its average).
 
 ## Schema changes
 
-None. `visits` was already defined in `001_create_tables.sql` with a
+One: `client/db/migrations/002_add_visit_rating.sql` adds a nullable
+`rating NUMERIC` column to `visits`, same 0-5 range as `restaurants.rating`.
+`visits` itself was already defined in `001_create_tables.sql` with a
 `restaurantId` foreign key (`ON DELETE CASCADE`) and an index on
-`restaurantId` - I only had to write the API and UI on top of it. The
-`toVisit()` row mapper in `lib/types.ts` was likewise already there, unused
-before this.
+`restaurantId` - only the rating column and everything built on top of it
+(API, UI) is new here.
 
 ## How I verified this
 
@@ -184,17 +209,17 @@ that weren't handled before A3.
 curl -i http://localhost:3000/api/restaurants/1/visits         # 200 + array
 curl -i http://localhost:3000/api/restaurants/99999/visits     # 404, no such restaurant
 curl -i http://localhost:3000/api/restaurants/abc/visits       # 404, not an integer
-curl -i http://localhost:3000/api/restaurants/1/summary        # 200 + {visitCount, totalSpent, averageSpent}
+curl -i http://localhost:3000/api/restaurants/1/summary        # 200 + {visitCount, totalSpent, averageSpent, averageRating}
 curl -i http://localhost:3000/api/restaurants/99999/summary    # 404, no such restaurant
 
-# create - review notes optional
+# create - rating, amount, and notes are all optional
 curl -i -X POST http://localhost:3000/api/restaurants/1/visits \
   -H 'Content-Type: application/json' \
-  -d '{"date":"2026-09-01","amountSpent":24.5,"notes":"Great ramen, salty broth"}'
+  -d '{"date":"2026-09-01","amountSpent":24.5,"rating":4.5,"notes":"Great ramen, salty broth"}'
   # 201 + created visit
 curl -i -X POST http://localhost:3000/api/restaurants/1/visits \
   -H 'Content-Type: application/json' -d '{"date":"2026-09-05","amountSpent":18}'
-  # 201 + created visit, notes null - confirms a review isn't mandatory
+  # 201 + created visit, rating/notes null - confirms neither is mandatory
 curl -i -X POST http://localhost:3000/api/restaurants/99999/visits \
   -H 'Content-Type: application/json' -d '{"date":"2026-09-01"}'
   # 404, no such restaurant
@@ -208,17 +233,25 @@ curl -i -X POST http://localhost:3000/api/restaurants/1/visits \
   -H 'Content-Type: application/json' -d '{"date":"2026-09-01","amountSpent":-5}'
   # 400, amountSpent must be non-negative
 curl -i -X POST http://localhost:3000/api/restaurants/1/visits \
+  -H 'Content-Type: application/json' -d '{"date":"2026-09-01","rating":9}'
+  # 400, rating outside 0-5
+curl -i -X POST http://localhost:3000/api/restaurants/1/visits \
   -H 'Content-Type: application/json' -d '{"date":"2026-09-01","notes":"   "}'
   # 400, notes must be non-empty when provided
 curl -i -X POST http://localhost:3000/api/restaurants/1/visits \
   -H 'Content-Type: application/json' -d '{bad json'
   # 400, malformed body
 
-# update (against the visit ids created above)
+# update (against the visit ids created above) - PUT is a partial update
 curl -i -X PUT http://localhost:3000/api/restaurants/1/visits/<id> \
-  -H 'Content-Type: application/json' \
-  -d '{"date":"2026-09-01","amountSpent":30,"notes":"Updated: even better second read"}'
-  # 200 + updated visit
+  -H 'Content-Type: application/json' -d '{"date":"2026-09-01","rating":3}'
+  # 200 + updated visit, amountSpent/notes unchanged - only rating touched
+curl -i -X PUT http://localhost:3000/api/restaurants/1/visits/<id> \
+  -H 'Content-Type: application/json' -d '{"date":"2026-09-01","rating":null}'
+  # 200 + rating explicitly cleared to null
+curl -i -X PUT http://localhost:3000/api/restaurants/1/visits/<id> \
+  -H 'Content-Type: application/json' -d '{"date":"2026-09-01","rating":-1}'
+  # 400, invalid rating
 curl -i -X PUT http://localhost:3000/api/restaurants/1/visits/99999 \
   -H 'Content-Type: application/json' -d '{"date":"2026-09-01"}'
   # 404, no such visit
@@ -230,17 +263,20 @@ curl -i -X DELETE http://localhost:3000/api/restaurants/1/visits/<id>   # 204, n
 ```
 
 Ran all of the above locally, plus clicked through the UI at
-`/restaurants/1`: logged a visit with notes, logged one without, deleted one,
-and confirmed the visit count/total/average tile updated each time. Every
-case above returned the status the table says it should - no `500`s,
-including the not-found restaurant, not-found visit, and malformed-body
-cases.
+`/restaurants/1`: logged a visit with a rating and notes, logged one
+without either, edited a visit's rating through the form (prefills from the
+existing row, submits `PUT`), deleted one, and confirmed the visit
+count/total/average/average-rating tile updated each time. Every case above
+returned the status the table says it should - no `500`s, including the
+not-found restaurant, not-found visit, and malformed-body cases.
 
 ## Known issues / what I'd do next
 
-- No edit-visit UI (see Q3) - `PUT` works, curl-tested, just no form for it.
 - No pagination on `GET /api/restaurants/:id/visits` - fine for seed data,
   would need it for a restaurant with many visits.
+- `restaurants.rating` never updates based on visit ratings - the summary
+  computes `averageRating` from visits, but nothing writes it back to the
+  restaurant, so the two can drift out of sync (see Q3).
 - Deleting a restaurant cascades to its visits (`ON DELETE CASCADE` in the
   original migration) - I kept that behavior rather than blocking the delete,
   since a restaurant with no visits left to reference is a reasonable thing
